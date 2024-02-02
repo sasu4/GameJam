@@ -8,11 +8,12 @@ pygame.display.set_caption('Hra')
 
 WIDTH, HEIGHT = 800, 600
 FPS = 60
-VELOCITY = 5 # 5
+VELOCITY = 5
 main_menu = True
 tutorial = False
 game_over = False
 winner = False
+level = 1
 
 window = pygame.display.set_mode((WIDTH, HEIGHT))
 
@@ -24,12 +25,11 @@ bkg_winner = pygame.image.load('assets/winner.png')
 bkg_winner = pygame.transform.scale(bkg_winner, (WIDTH, HEIGHT))
 start_image = pygame.image.load('assets/startbtn.png')
 exit_image = pygame.image.load('assets/exitbtn.png')
+continue_image = pygame.image.load('assets/continuebtn.png')
 restart_image = pygame.image.load('assets/restartbtn.png')
 tutorial_image = pygame.image.load('assets/tutorialbtn.png')
 tutorial_background = pygame.image.load('assets/tutos.png')
-full_heart_image = pygame.image.load('assets/Icons/HeartFull.png')
-half_heart_image = pygame.image.load('assets/Icons/HeartHalf.png')
-empty_heart_image = pygame.image.load('assets/Icons/HeartEmpty.png')
+tutorial_background = pygame.transform.scale(tutorial_background, (WIDTH, HEIGHT))
 
 
 class Button():
@@ -52,9 +52,6 @@ class Button():
         window.blit(self.image, self.rect)
         return action
 
-def flip(sprites):
-    return [pygame.transform.flip(sprite, True, False) for sprite in sprites]
-
 def load_sprite_sheet(dir1, dir2, w, h):
     path = join("assets", dir1, dir2)
     images = [file for file in listdir(path) if isfile(join(path, file))]
@@ -66,7 +63,7 @@ def load_sprite_sheet(dir1, dir2, w, h):
             surface = pygame.Surface((w, h), pygame.SRCALPHA, 32)
             rect = pygame.Rect(i * w, 0, w, h)
             surface.blit(sprite_sheet, (0, 0), rect)
-            sprites.append(pygame.transform.scale2x(surface))
+            sprites.append(pygame.transform.scale(surface, (rect.width*4, rect.height*4)))
         all_sprites[image.replace(".png", "")] = sprites
     return all_sprites
 
@@ -79,15 +76,17 @@ class Hero(pygame.sprite.Sprite):
     def __init__(self, x, y, w, h):
         super().__init__()
         self.rect = pygame.Rect(x, y, w, h)
+        self.default_width = w
+        self.default_height = h
         self.x_vel = 0
         self.y_vel = 0
         self.mask = None
+        self.radius = 1
         self.animation_count = 0
         self.fall_count = 0
         self.jump_count = 0
         self.hit = False
         self.hit_count = 0
-        self.life = 100
         self.last_hit_object = None
 
     def jump(self):
@@ -105,28 +104,40 @@ class Hero(pygame.sprite.Sprite):
         self.rect.x += dx
         self.rect.y += dy
 
-    def make_hit(self, object):
-        global game_over
+    def make_hit(self, object, type):
+        global game_over, GRAVITY
         self.hit = True
-        if self.last_hit_object != object:
-            self.life -= 10
+        if (self.last_hit_object != object) and (type == 'good'):
+            self.GRAVITY -= 0.05
             self.last_hit_object = object
-        if self.life == 0:
-            game_over = True
+            self.radius += 5
+        elif (self.last_hit_object != object) and (type == 'bad'):
+            self.GRAVITY += 0.1
+            self.last_hit_object = object
+            self.radius -= 10
+            if self.rect.height < 30:
+                game_over = True
         self.hit_count = 0
+        object.update()
 
     def move_right(self, vel):
         self.x_vel = vel
         self.animation_count = 0
 
     def loop(self, fps):
+        global game_over, winner
         self.y_vel += min(1, (self.fall_count / fps) * self.GRAVITY)
         self.move(self.x_vel, self.y_vel)
         if self.hit:
             self.hit_count += 1
-        if self.hit_count > fps *2:
+        if self.hit_count > fps * 2:
             self.hit = False
             self.hit_count = 0
+        if self.rect.x > 23000:
+            game_over = True
+        if self.rect.height >= 143:
+            winner = True
+
         self.fall_count += 1
         self.update_sprite()
 
@@ -136,9 +147,9 @@ class Hero(pygame.sprite.Sprite):
         self.jump_count = 0
 
     def update_sprite(self):
-        sprite_sheet = "idle"
+        sprite_sheet = "run"
         if self.hit:
-            sprite_sheet = "hurt"
+            sprite_sheet = "eat"
         elif self.y_vel < 0:
             if self.jump_count == 1:
                 sprite_sheet = "jump"
@@ -150,6 +161,7 @@ class Hero(pygame.sprite.Sprite):
         sprites = self.SPRITES[sprite_sheet_name]
         sprite_index = (self.animation_count // self.ANIMATION_DELAY) % len(sprites)
         self.sprite = sprites[sprite_index]
+        self.sprite = pygame.transform.scale(self.sprite, (self.sprite.get_width()+self.radius, self.sprite.get_height()+self.radius))
         self.animation_count += 1
         self.update()
 
@@ -186,30 +198,38 @@ def get_block(size, x, y):
 class Block(Object):
     def __init__(self, x, y, size):
         super().__init__(x, y, size, size)
-        block = get_block(size, 0, 0)
+        block = get_block(size, 96, 0)
         self.image.blit(block, (0, 0))
         self.mask = pygame.mask.from_surface(self.image)
 
 
+def get_random_image(path):
+    images = []
+    for file in listdir(path):
+        if file.endswith(".png"):
+            images.append(join(path, file))
+    return pygame.image.load(random.choice(images))
+
+
 class Food(Object):
     ANIMATION_DELAY = 3
-    def __init__(self, x, y, w, h, type, dir, parameter):
-        super().__init__(x, y, w, h, type)
-        self.trap = load_sprite_sheet("food", dir, w, h)
-        self.image = self.trap[parameter][0]
+
+    def __init__(self, x, y, w, h, dir):
+        self.type = dir.lower()
+        super().__init__(x, y, w, h, self.type)
+        self.image = pygame.transform.scale2x(get_random_image('assets/food/'+dir))
         self.mask = pygame.mask.from_surface(self.image)
         self.animation_count = 0
-        self.animation_name = parameter
 
     def loop(self):
-        sprites = self.trap[self.animation_name]
-        sprite_index = (self.animation_count // self.ANIMATION_DELAY) % len(sprites)
-        self.image = sprites[sprite_index]
         self.animation_count += 1
         self.rect = self.image.get_rect(topleft=(self.rect.x, self.rect.y))
         self.mask = pygame.mask.from_surface(self.image)
-        if self.animation_count // self.ANIMATION_DELAY > len(sprites):
+        if self.animation_count // self.ANIMATION_DELAY > 10:
             self.animation_count = 0
+
+    def update(self):
+        self.kill()
 
 
 def get_background(sprite):
@@ -223,14 +243,12 @@ def get_background(sprite):
     return tiles, image
 
 
-def draw(window, background, bg_image, hero, objects=None, offset_x=0):
+def draw(window, background, bg_image, player, objects=None, offset_x=0):
     for tile in background:
         window.blit(bg_image, tuple(tile))
     for obj in objects:
         obj.draw(window, offset_x)
-    hero.draw(window, offset_x)
-    # hearts
-    draw_hearts(window, hero)
+    player.draw(window, offset_x)
     pygame.display.update()
 
 def handle_vertical_collision(player, objects, dy):
@@ -245,7 +263,6 @@ def handle_vertical_collision(player, objects, dy):
                 player.hit_head()
             collided_objects.append(obj)
     return collided_objects
-
 
 
 def collide(player, objects, dx):
@@ -268,95 +285,24 @@ def handle_move(player, objects):
     collide_left = collide(player, objects, -VELOCITY *2)
     collide_right = collide(player, objects, VELOCITY *2)
 
-    #if keys[pygame.K_LEFT] and not collide_left:
-    #    player.move_left(VELOCITY)
-    #if keys[pygame.K_RIGHT] and not collide_right:
-    #    player.move_right(VELOCITY)
     if not collide_right:
         player.move_right(VELOCITY)
     vertical_collide = handle_vertical_collision(player, objects, player.y_vel)
 
     to_check = [collide_left, collide_right, *vertical_collide]
     for obj in to_check:
-        if obj and obj.name == "saw":
-            player.make_hit(obj)
-        if obj and obj.name == "fire":
-            player.make_hit(obj)
-        if obj and obj.name == "spike":
-            player.make_hit(obj)
-
-
-def draw_hearts(window, hero):
-    if hero.life == 100:
-        window.blit(full_heart_image, (hero.x_vel, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45 * 2, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45 * 3, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45 * 4, 10))
-    elif hero.life == 90:
-        window.blit(full_heart_image, (hero.x_vel, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45 * 2, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45 * 3, 10))
-        window.blit(half_heart_image, (hero.x_vel + 45 * 4, 10))
-    elif hero.life == 80:
-        window.blit(full_heart_image, (hero.x_vel, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45 * 2, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45 * 3, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 4, 10))
-    elif hero.life == 70:
-        window.blit(full_heart_image, (hero.x_vel, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45 * 2, 10))
-        window.blit(half_heart_image, (hero.x_vel + 45 * 3, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 4, 10))
-    elif hero.life == 60:
-        window.blit(full_heart_image, (hero.x_vel, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45 * 2, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 3, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 4, 10))
-    elif hero.life == 50:
-        window.blit(full_heart_image, (hero.x_vel, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45, 10))
-        window.blit(half_heart_image, (hero.x_vel + 45 * 2, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 3, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 4, 10))
-    elif hero.life == 40:
-        window.blit(full_heart_image, (hero.x_vel, 10))
-        window.blit(full_heart_image, (hero.x_vel + 45, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 2, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 3, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 4, 10))
-    elif hero.life == 30:
-        window.blit(full_heart_image, (hero.x_vel, 10))
-        window.blit(half_heart_image, (hero.x_vel + 45, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 2, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 3, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 4, 10))
-    elif hero.life == 20:
-        window.blit(full_heart_image, (hero.x_vel, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 2, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 3, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 4, 10))
-    elif hero.life == 10:
-        window.blit(half_heart_image, (hero.x_vel, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 2, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 3, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 4, 10))
-    elif hero.life == 0:
-        window.blit(empty_heart_image, (hero.x_vel, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 2, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 3, 10))
-        window.blit(empty_heart_image, (hero.x_vel + 45 * 4, 10))
+        if obj and obj.name == "good":
+            player.make_hit(obj, 'good')
+            objects.remove(obj)
+            break
+        if obj and obj.name == "bad":
+            player.make_hit(obj, 'bad')
+            objects.remove(obj)
+            break
 
 
 def main(window):
-    global main_menu, tutorial, game_over, winner, VELOCITY
+    global main_menu, tutorial, game_over, winner, VELOCITY, GRAVITY
     clock = pygame.time.Clock()
     background, bg_image = get_background("Yellow.png")
 
@@ -366,13 +312,14 @@ def main(window):
     objects = []
 
     offset_x = 0
-    scroll_area_width = 200
+    scroll_area_width = 400
 
-    start_button = Button(WIDTH // 2 - 250, HEIGHT // 2, start_image)
-    exit_button = Button(WIDTH // 2 + 150, HEIGHT // 2, exit_image)
-    tutorial_button = Button(WIDTH // 2-60, HEIGHT // 2 + 150, tutorial_image)
+    start_button = Button(WIDTH - 200, 100, start_image)
+    exit_button = Button(WIDTH - 200, 300, exit_image)
+    tutorial_button = Button(WIDTH - 200, 200, tutorial_image)
     restart_button = Button(WIDTH //2 - 100, HEIGHT // 2, restart_image)
-
+    pygame.mixer.music.load('assets/funnysong.mp3')
+    pygame.mixer.music.play(-1)
 
     run = True
     while run:
@@ -397,10 +344,11 @@ def main(window):
             if start_button.draw():
                 offset_x = 0
                 hero.rect.x = 0
-                food = [Food(i * 500, HEIGHT - block_size - 64 - 19, 38, 38, "saw", "Saw", "on") for i in
-                            range(2, 10)]
+
+                food = [Food(i * 330, HEIGHT - block_size - 54, 38, 38, random.choice(["Good", "Bad"])) for i in
+                            range(2, 70)]
                 floor = [Block(i * block_size, HEIGHT - block_size, block_size) for i in
-                             range(-WIDTH // block_size, WIDTH * 10 // block_size)]
+                             range(-WIDTH // block_size, WIDTH * 40 // block_size)]
 
                 objects = [*floor, *food]
                 main_menu = False
@@ -410,10 +358,10 @@ def main(window):
             if start_button.draw():
                 offset_x = 0
                 hero.rect.x = 0
-                food = [Food(i * 500, HEIGHT - block_size - 64 - 19, 38, 38, "saw", "Saw", "on") for i in
-                        range(2, 10)]
+                food = [Food(i * 330, HEIGHT - block_size - 54, 38, 38, random.choice(["Good", "Bad"])) for i in
+                        range(2, 70)]
                 floor = [Block(i * block_size, HEIGHT - block_size, block_size) for i in
-                         range(-WIDTH // block_size, WIDTH * 10 // block_size)]
+                         range(-WIDTH // block_size, WIDTH * 30 // block_size)]
                 objects = [*floor, *food]
                 main_menu = False
                 tutorial = False
@@ -423,7 +371,10 @@ def main(window):
             if restart_button.draw():
                 main_menu = True
                 game_over = False
-                hero.life = 100
+                hero.kill()
+                hero = Hero(100, 100, 50, 50)
+                print(hero.rect.width)
+                GRAVITY = 1
                 VELOCITY = 5
             pygame.display.update()
         elif winner == True:
@@ -431,7 +382,10 @@ def main(window):
             if restart_button.draw():
                 main_menu = True
                 winner = False
-                hero.life = 100
+                hero.kill()
+                hero = Hero(100, 100, 50, 50)
+                print(hero.rect.width)
+                GRAVITY = 1
                 VELOCITY = 5
             pygame.display.update()
         else:
