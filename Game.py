@@ -4,7 +4,7 @@ from os import listdir
 from os.path import isfile, join
 
 pygame.init()
-pygame.display.set_caption('Hra')
+pygame.display.set_caption('Hungry Hedgie')
 
 WIDTH, HEIGHT = 800, 600
 FPS = 60
@@ -13,22 +13,23 @@ main_menu = True
 tutorial = False
 game_over = False
 winner = False
+contin = False # continue game
 level = 1
 
 window = pygame.display.set_mode((WIDTH, HEIGHT))
 
-bkg_image = pygame.image.load('assets/menu.png')
+bkg_image = pygame.image.load('assets/background/menu.png')
 bkg_image = pygame.transform.scale(bkg_image, (WIDTH, HEIGHT))
-bkg_gameover = pygame.image.load('assets/gameover.png')
+bkg_gameover = pygame.image.load('assets/background/gameover.png')
 bkg_gameover = pygame.transform.scale(bkg_gameover, (WIDTH, HEIGHT))
-bkg_winner = pygame.image.load('assets/winner.png')
+bkg_winner = pygame.image.load('assets/background/winner.png')
 bkg_winner = pygame.transform.scale(bkg_winner, (WIDTH, HEIGHT))
-start_image = pygame.image.load('assets/startbtn.png')
-exit_image = pygame.image.load('assets/exitbtn.png')
-continue_image = pygame.image.load('assets/continuebtn.png')
-restart_image = pygame.image.load('assets/restartbtn.png')
-tutorial_image = pygame.image.load('assets/tutorialbtn.png')
-tutorial_background = pygame.image.load('assets/tutos.png')
+start_image = pygame.image.load('assets/buttons/startbtn.png')
+exit_image = pygame.image.load('assets/buttons/exitbtn.png')
+continue_image = pygame.image.load('assets/buttons/continuebtn.png')
+restart_image = pygame.image.load('assets/buttons/restartbtn.png')
+tutorial_image = pygame.image.load('assets/buttons/tutorialbtn.png')
+tutorial_background = pygame.image.load('assets/background/tutos.png')
 tutorial_background = pygame.transform.scale(tutorial_background, (WIDTH, HEIGHT))
 
 
@@ -105,7 +106,7 @@ class Hero(pygame.sprite.Sprite):
         self.rect.y += dy
 
     def make_hit(self, object, type):
-        global game_over, GRAVITY
+        global game_over, GRAVITY, level, contin
         self.hit = True
         if (self.last_hit_object != object) and (type == 'good'):
             self.GRAVITY -= 0.05
@@ -117,6 +118,8 @@ class Hero(pygame.sprite.Sprite):
             self.radius -= 10
             if self.rect.height < 30:
                 game_over = True
+                contin = False
+                level = 1
         self.hit_count = 0
         object.update()
 
@@ -125,7 +128,7 @@ class Hero(pygame.sprite.Sprite):
         self.animation_count = 0
 
     def loop(self, fps):
-        global game_over, winner
+        global game_over, winner, level, main_menu, contin
         self.y_vel += min(1, (self.fall_count / fps) * self.GRAVITY)
         self.move(self.x_vel, self.y_vel)
         if self.hit:
@@ -135,7 +138,24 @@ class Hero(pygame.sprite.Sprite):
             self.hit_count = 0
         if self.rect.x > 23000:
             game_over = True
-        if self.rect.height >= 143:
+            contin = False
+        if (self.rect.height >= 110) and (level == 1):
+            level += 1
+            main_menu = True
+            contin = True
+        elif (self.rect.height >= 115) and (level == 2):
+            level += 1
+            main_menu = True
+            contin = True
+        elif (self.rect.height >= 125) and (level == 3):
+            level += 1
+            main_menu = True
+            contin = True
+        elif (self.rect.height >= 130) and (level == 4):
+            level += 1
+            main_menu = True
+            contin = True
+        elif (self.rect.height >= 140) and (level == 5):
             winner = True
 
         self.fall_count += 1
@@ -162,10 +182,10 @@ class Hero(pygame.sprite.Sprite):
         sprite_index = (self.animation_count // self.ANIMATION_DELAY) % len(sprites)
         self.sprite = sprites[sprite_index]
         self.sprite = pygame.transform.scale(self.sprite, (self.sprite.get_width()+self.radius, self.sprite.get_height()+self.radius))
-        self.animation_count += 1
         self.update()
 
     def update(self):
+        self.animation_count += 1
         self.rect = self.sprite.get_rect(topleft=(self.rect.x, self.rect.y))
         self.mask = pygame.mask.from_surface(self.sprite)
 
@@ -302,7 +322,7 @@ def handle_move(player, objects):
 
 
 def main(window):
-    global main_menu, tutorial, game_over, winner, VELOCITY, GRAVITY
+    global main_menu, tutorial, game_over, winner, VELOCITY, GRAVITY, level, contin
     clock = pygame.time.Clock()
     background, bg_image = get_background("Yellow.png")
 
@@ -317,8 +337,9 @@ def main(window):
     start_button = Button(WIDTH - 200, 100, start_image)
     exit_button = Button(WIDTH - 200, 300, exit_image)
     tutorial_button = Button(WIDTH - 200, 200, tutorial_image)
-    restart_button = Button(WIDTH //2 - 100, HEIGHT // 2, restart_image)
-    pygame.mixer.music.load('assets/funnysong.mp3')
+    continue_button = Button(WIDTH - 200, 100, continue_image)
+    restart_button = Button(WIDTH - 200, 100, restart_image)
+    pygame.mixer.music.load('assets/music/funnysong.mp3')
     pygame.mixer.music.play(-1)
 
     run = True
@@ -335,23 +356,44 @@ def main(window):
                     main_menu = True
         if main_menu == True:
             window.blit(bkg_image, (0, 0)) # start menu bkgnd
+            font = pygame.font.Font('assets/fonts/Cooper Black Regular.ttf', 36)
+            text = font.render("LEVEL "+str(level), True, (0, 0, 0))
+            window.blit(text, (WIDTH - 190, text.get_height()- 10))
+
             if exit_button.draw():
                 run = False
                 break
             if tutorial_button.draw():
                 main_menu = False
                 tutorial = True
-            if start_button.draw():
-                offset_x = 0
-                hero.rect.x = 0
+            if contin == False:
+                if start_button.draw():
+                    offset_x = 0
+                    hero.rect.x = 0
 
-                food = [Food(i * 330, HEIGHT - block_size - 54, 38, 38, random.choice(["Good", "Bad"])) for i in
+                    food = [Food(i * 330, HEIGHT - block_size - 54, 38, 38, random.choice(["Good", "Bad"])) for i in
+                                range(2, 70)]
+                    floor = [Block(i * block_size, HEIGHT - block_size, block_size) for i in
+                                 range(-WIDTH // block_size, WIDTH * 40 // block_size)]
+
+                    objects = [*floor, *food]
+                    main_menu = False
+            if contin:
+                if continue_button.draw():
+                    offset_x = 0
+                    hero.kill()
+                    hero = Hero(100, 100, 50, 50)
+                    GRAVITY = 1
+                    VELOCITY = 5
+                    hero.rect.x = 0
+
+                    food = [Food(i * 330, HEIGHT - block_size - 54, 38, 38, random.choice(["Good", "Bad"])) for i in
                             range(2, 70)]
-                floor = [Block(i * block_size, HEIGHT - block_size, block_size) for i in
+                    floor = [Block(i * block_size, HEIGHT - block_size, block_size) for i in
                              range(-WIDTH // block_size, WIDTH * 40 // block_size)]
 
-                objects = [*floor, *food]
-                main_menu = False
+                    objects = [*floor, *food]
+                    main_menu = False
             pygame.display.update()
         elif tutorial == True and main_menu == False:
             window.blit(tutorial_background, (0, 0))
@@ -373,7 +415,6 @@ def main(window):
                 game_over = False
                 hero.kill()
                 hero = Hero(100, 100, 50, 50)
-                print(hero.rect.width)
                 GRAVITY = 1
                 VELOCITY = 5
             pygame.display.update()
@@ -384,9 +425,10 @@ def main(window):
                 winner = False
                 hero.kill()
                 hero = Hero(100, 100, 50, 50)
-                print(hero.rect.width)
                 GRAVITY = 1
                 VELOCITY = 5
+                level = 1
+                contin = False
             pygame.display.update()
         else:
             hero.loop(FPS)
